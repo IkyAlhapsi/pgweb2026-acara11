@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>WebGIS Kecamatan Kabupaten Bandung</title>
+
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"
+  />
+
+  <style>
+    body {
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      font-family: Arial, sans-serif;
+    }
+
+    header {
+      padding: 14px 20px;
+      background: #173b59;
+      color: white;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    #map {
+      width: 100%;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .legend {
+      padding: 12px;
+      background: white;
+      border-radius: 5px;
+      box-shadow: 0 1px 5px rgba(0, 0, 0, 0.3);
+      max-height: 35vh;
+      max-width: 260px;
+      overflow: auto;
+    }
+
+    .legend h3 {
+      margin: 0 0 10px;
+      font-size: 15px;
+    }
+
+    .legend-section {
+      margin-bottom: 12px;
+    }
+
+    .legend-section:last-child {
+      margin-bottom: 0;
+    }
+
+    .legend-section strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+
+    .legend-section img {
+      display: block;
+      max-width: 100%;
+    }
+
+    #status {
+      padding: 8px 20px;
+      background: #fff0dc;
+      color: #713c00;
+      font-size: 13px;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>WebGIS Kecamatan Kabupaten Bandung</h1>
+  </header>
+
+  <div id="status" role="status" hidden></div>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+
+  <script>
+    // Membuat peta.
+    var map = L.map("map");
+
+    // Cakupan data berdasarkan bounding box dari GeoServer.
+    // Urutan koordinat Leaflet: [latitude, longitude].
+    var batasBandung = [
+      [-7.309770641999914, 107.25102930300002],
+      [-6.812844997999924, 107.93843227600009]
+    ];
+
+    map.fitBounds(batasBandung, {
+      padding: [20, 20]
+    });
+
+    // Basemap OpenStreetMap.
+    var osm = L.tileLayer(
+      "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+      {
+        maxZoom: 19,
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      }
+    ).addTo(map);
+
+    // Alamat layanan dan nama layer dari GeoServer.
+    var wmsUrl =
+      "http://localhost:8080/geoserver/PGWEB_ACARA11/wms";
+
+    var namaPoligon =
+      "PGWEB_ACARA11:Batas_kecamatan_kab.bandung";
+
+    var namaGaris =
+      "PGWEB_ACARA11:Batas_Kecamatan_Bandung_Line";
+
+    // Layer poligon kecamatan.
+    var poligon = L.tileLayer.wms(wmsUrl, {
+      layers: namaPoligon,
+      styles: "",
+      format: "image/png",
+      transparent: true,
+      version: "1.1.0",
+      crs: L.CRS.EPSG4326,
+      opacity: 1,
+      zIndex: 10
+    });
+
+    // Layer garis batas kecamatan.
+    var garis = L.tileLayer.wms(wmsUrl, {
+      layers: namaGaris,
+      styles: "",
+      format: "image/png",
+      transparent: true,
+      version: "1.1.0",
+      crs: L.CRS.EPSG4326,
+      opacity: 1,
+      zIndex: 20
+    });
+
+    // Menampilkan pesan jika gambar WMS gagal dimuat.
+    function tanganiErrorWMS(event) {
+      var status = document.getElementById("status");
+
+      status.hidden = false;
+      status.textContent =
+        "Layer GeoServer gagal dimuat. Pastikan GeoServer aktif dan layer dapat dibuka melalui Layer Preview.";
+
+      console.error("Permintaan WMS gagal:", event.tile.src);
+    }
+
+    poligon.on("tileerror", tanganiErrorWMS);
+    garis.on("tileerror", tanganiErrorWMS);
+
+    poligon.addTo(map);
+    garis.addTo(map);
+
+    // Kontrol basemap dan overlay.
+    var baseMaps = {
+      "OpenStreetMap": osm
+    };
+
+    var overlayMaps = {
+      "Wilayah Kecamatan (Poligon)": poligon,
+      "Batas Kecamatan (Garis)": garis
+    };
+
+    L.control.layers(baseMaps, overlayMaps, {
+      position: "topright",
+      collapsed: false
+    }).addTo(map);
+
+    // Membuat URL legenda dari GeoServer.
+    function urlLegenda(namaLayer) {
+      var parameter = new URLSearchParams({
+        service: "WMS",
+        request: "GetLegendGraphic",
+        version: "1.1.0",
+        format: "image/png",
+        layer: namaLayer
+      });
+
+      return wmsUrl + "?" + parameter.toString();
+    }
+
+    // Membuat kontrol legenda.
+    var legenda = L.control({
+      position: "bottomleft"
+    });
+
+    var kotakLegenda;
+
+    function perbaruiLegenda() {
+      if (!kotakLegenda) return;
+
+      kotakLegenda.innerHTML = "";
+
+      var daftarLayer = [
+        {
+          layer: poligon,
+          nama: namaPoligon,
+          judul: "Wilayah Kecamatan"
+        },
+        {
+          layer: garis,
+          nama: namaGaris,
+          judul: "Batas Kecamatan"
+        }
+      ];
+
+      var layerAktif = daftarLayer.filter(function (item) {
+        return map.hasLayer(item.layer);
+      });
+
+      kotakLegenda.hidden = layerAktif.length === 0;
+
+      if (layerAktif.length === 0) return;
+
+      var judulLegenda = document.createElement("h3");
+      judulLegenda.textContent = "Legenda";
+      kotakLegenda.appendChild(judulLegenda);
+
+      layerAktif.forEach(function (item) {
+        var bagian = document.createElement("div");
+        bagian.className = "legend-section";
+
+        var judul = document.createElement("strong");
+        judul.textContent = item.judul;
+
+        var gambar = document.createElement("img");
+        gambar.src = urlLegenda(item.nama);
+        gambar.alt = "Legenda " + item.judul;
+
+        bagian.appendChild(judul);
+        bagian.appendChild(gambar);
+        kotakLegenda.appendChild(bagian);
+      });
+    }
+
+    legenda.onAdd = function () {
+      kotakLegenda = L.DomUtil.create("div", "legend");
+
+      L.DomEvent.disableClickPropagation(kotakLegenda);
+      L.DomEvent.disableScrollPropagation(kotakLegenda);
+
+      perbaruiLegenda();
+
+      return kotakLegenda;
+    };
+
+    legenda.addTo(map);
+
+    // Memperbarui legenda ketika overlay diaktifkan/dinonaktifkan.
+    map.on("overlayadd overlayremove", perbaruiLegenda);
+
+    // Menambahkan skala.
+    L.control.scale({
+      imperial: false,
+      position: "bottomright"
+    }).addTo(map);
+  </script>
+</body>
+</html>
